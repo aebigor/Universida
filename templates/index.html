@@ -64,9 +64,15 @@
 <body>
     <h1 style="text-align: center;">Automatización de Universidades</h1>
 
-    <!-- Botón para actualizar el archivo Excel -->
+    <!-- Botón para abrir el archivo Excel -->
     <div style="text-align: center; margin-top: 20px;">
-        <button onclick="actualizarExcel()">Actualizar Excel</button>
+        <button onclick="abrirExcel()">Abrir Excel</button>
+    </div>
+
+
+    <!-- Botón para automatizar universidades -->
+    <div style="text-align: center; margin-top: 20px;">
+        <button onclick="automatizarUniversidades()">Automatizar Universidades</button>
     </div>
 
     <!-- Select para filtrar por carrera -->
@@ -421,6 +427,42 @@
         });
 
         document.addEventListener('DOMContentLoaded', mostrarTodasUniversidades);
+
+        function automatizarUniversidades() {
+            fetch('/automatizar_universidades', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                // Puedes agregar aquí lógica adicional para manejar los resultados si lo deseas
+            })
+            .catch(error => {
+                console.error('Error en la automatización de universidades:', error);
+                alert('Error en la automatización de universidades. Consulta el registro para más detalles.');
+            });
+        }
+
+        function abrirExcel() {
+            fetch('/abrir_excel', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert(data.message);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error.message);
+            });
+        }
+
     </script>
 
 </body>

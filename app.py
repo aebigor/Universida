@@ -5,7 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import pandas as pd
-from fuzzywuzzy import fuzz
+from fuzzywuzzy import process, fuzz
 import logging
 import os
 
@@ -157,10 +157,26 @@ def guardar_excel_actualizado():
         print(f"Archivo Excel '{excel_path}' abierto correctamente.")
     except Exception as e:
         print(f"No se pudo abrir el archivo Excel: {e}")
-    
+
+
+# Función para cargar datos desde el archivo Excel
+def cargar_datos_excel(ruta):
+    try:
+        return pd.read_excel(ruta)
+    except Exception as e:
+        logger.error(f"Error al cargar el archivo Excel: {str(e)}")
+        return None
+
+# Función para inicializar el driver de Selenium
+def iniciar_driver():
+    try:
+        return webdriver.Chrome()
+    except Exception as e:
+        logger.error(f"Error al iniciar el driver de Selenium: {str(e)}")
+        return None
 
 # Función para procesar cada universidad
-def procesar_universidad(nombre_universidad):
+def procesar_universidad(nombre_universidad, oferta, fila, driver):
     
     # Buscar la configuración de la universidad por su nombre
     universidad = next((u for u in universidades if u['nombre'] == nombre_universidad), None)
@@ -187,11 +203,13 @@ def procesar_universidad(nombre_universidad):
                 EC.element_to_be_clickable((By.ID, 'ctl00_Header1_UniversityCompaniesControl_headerLoginControl_btnLogin'))
             ).click()
 
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "ctl00_content_PublishJobOfferButton"))
-        ).click()
+    
 
         for index, row in df.iterrows():
+                
+                WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "ctl00_content_PublishJobOfferButton"))
+                ).click()
                 # Completa el título
                 campo1 = WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.ID, 'ctl00_content_ctl73_title'))
@@ -398,9 +416,9 @@ def procesar_universidad(nombre_universidad):
 
                     intentos += 1
                     if opcion_seleccionada is None:
-                         
+                    
 
-               
+            
                         print(f"No se encontró una opción adecuada para '{palabra_clave}' tras {intentos} intentos.")
 
 
@@ -438,7 +456,6 @@ def procesar_universidad(nombre_universidad):
                     if opcion_seleccionada is None:
                         
 
-               
                         print(f"No se encontró una opción adecuada para '{palabra_clave}' tras {intentos} intentos.")
 
 
@@ -472,7 +489,7 @@ def procesar_universidad(nombre_universidad):
                         if opcion_seleccionada is None:
                             
 
-               
+            
                             print(f"No se encontró una opción adecuada para '{palabra_clave}' tras {intentos} intentos.")
 
                 palabra_clave = str(row.iloc[13]).lower()
@@ -615,12 +632,12 @@ def procesar_universidad(nombre_universidad):
                 # Hacer clic en el botón
                 boton.click()
 
-                # boton = driver.find_element(By.ID, 'ctl00_content_Save')  # Boton de guardado
+                boton = driver.find_element(By.ID, 'ctl00_content_Save')  # Boton de guardado
 
                 # Hacer clic en el botón
                 boton.click()
 
-            # boton = driver.find_element(By.ID, 'ctl00_content_Save_dialogContainerok_button')  # Boton que acepta los cambios 
+                boton = driver.find_element(By.ID, 'ctl00_content_Save_dialogContainerok_button')  # Boton que acepta los cambios 
 
             # Hacer clic en el botón
                 boton.click()
@@ -651,17 +668,66 @@ def procesar():
         if not nombre_universidad:
             return jsonify({'message': 'Nombre de universidad no proporcionado.', 'status': 'error'})
 
-        resultado = procesar_universidad(nombre_universidad)
-        logger.debug(f"Resultado del procesamiento: {resultado}")
+        # Cargar el archivo Excel usando la ruta definida globalmente
+        df = cargar_datos_excel(excel_path)
+        if df is None:
+            return jsonify({"status": "Error al cargar el archivo Excel"})
+
+        # Filtrar las filas correspondientes a la universidad recibida
+        filas_universidad = df[df['universidades'].str.contains(nombre_universidad, case=False, na=False)]
+
+        if filas_universidad.empty:
+            return jsonify({"status": f"No se encontraron ofertas para la universidad {nombre_universidad}"}), 404
+
+        # Inicializar el driver de Selenium
+        driver = iniciar_driver()
+        if driver is None:
+            return jsonify({"status": "Error al iniciar el driver de Selenium"})
+
+        resultados = []
+
+        for index, fila in filas_universidad.iterrows():
+            # Construir la oferta para procesar
+            oferta = {
+                'titulo': fila['título de la oferta'],  # Ajustar nombres de columnas según tu archivo Excel
+                'area': fila['área'],
+                'cargo_equivalente': fila['cargo equivalente'],
+                'nivel_educativo': fila['nivel educativo'],
+                'subnivel': fila['subnivel'],
+                'cantidad_vacantes': fila['cantidad de vacantes'],
+                'rango_salario': fila['rango del salario en millones'],
+                'descripcion': fila['descripción'],
+                'requisitos': fila['requisitos'],
+                'departamento': fila['departamento'],
+                'ciudad': fila['ciudad'],
+                'sector': fila['sector'],
+                'subsectores': fila['subsectores'],
+                'nivel_estudio': fila['nivel de estudio'],
+                'profesion': fila['profecion'],
+                'experiencia_minima': fila['años totales de experiencia entre'],
+                'experiencia_maxima': fila['años totales de experiencia'],
+                'experiencia_requerida': fila['Experiencia requerida'],
+                'tipo_contrato': fila['tipo de contrato'],
+                'tiempo_dedicado': fila['tiempo dedicado']
+            }
+            # Procesar la universidad con la oferta construida
+            resultado = procesar_universidad(nombre_universidad, oferta, fila, driver)
+            resultados.append({'nombre': nombre_universidad, 'resultado': resultado})
+
+        # Cerrar el driver de Selenium al finalizar
+        driver.quit()
+
+        logger.debug(f"Resultado del procesamiento: {resultados}")
 
         return jsonify({
             'message': f"Procesando universidad {nombre_universidad} correctamente.",
             'status': 'success',
-            'resultados': [{'nombre': nombre_universidad, 'resultado': resultado}]
+            'resultados': resultados
         })
     except Exception as e:
         logger.error(f"Error en la solicitud de procesamiento: {e}")
         return jsonify({'message': 'Error interno del servidor.', 'status': 'error'}), 500
+
 
 @app.route('/actualizar_excel', methods=['POST'])
 def actualizar_excel():
@@ -680,11 +746,103 @@ def actualizar_excel():
         logger.error(f"Error al actualizar el archivo Excel: {e}")
         return jsonify({'message': 'Error interno del servidor.', 'status': 'error'}), 500
 
-
-
 def guardar_excel_actualizado():
-    # Lógica para guardar el archivo Excel actualizado
-    pass
+    try:
+        # Lee el archivo Excel existente
+        logger.debug(f"Abriendo el archivo Excel desde {excel_path}")
+        df = pd.read_excel(excel_path)
+        logger.debug("Archivo Excel leído correctamente.")
+
+        # Realiza las actualizaciones necesarias en el DataFrame
+        # Aquí puedes agregar la lógica para actualizar el DataFrame según sea necesario
+        # Ejemplo: df['nueva_columna'] = 'valor'
+
+        # Guarda el DataFrame actualizado de vuelta al archivo Excel
+        logger.debug("Guardando el archivo Excel actualizado.")
+        df.to_excel(excel_path, index=False)
+        logger.debug("Archivo Excel guardado correctamente.")
+    except Exception as e:
+        logger.error(f"Error al guardar el archivo Excel actualizado: {e}")
+        raise e
+
+@app.route('/abrir_excel', methods=['POST'])
+def abrir_excel():
+    try:
+        # Ruta del archivo Excel
+        excel_path = './ofertas_de_empleo.xlsx'
+        # Abre el archivo Excel
+        os.system(f'start EXCEL.EXE "{os.path.abspath(excel_path)}"')
+        return jsonify({'status': 'success', 'message': 'Archivo Excel abierto correctamente.'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+    
+@app.route('/automatizar_universidades', methods=['POST'])
+def automatizar_universidades():
+    try:
+        # Cargar el archivo Excel
+        df = cargar_datos_excel(excel_path)
+        if df is None:
+            return jsonify({"status": "Error al cargar el archivo Excel"})
+
+        # Inicializar el driver de Selenium
+        driver = iniciar_driver()
+        if driver is None:
+            return jsonify({"status": "Error al iniciar el driver de Selenium"})
+
+        # Obtener las universidades únicas del DataFrame
+        universidades = df['universidades'].dropna().unique()
+        resultados = []
+
+        for universidad in universidades:
+            logger.debug(f"Procesando universidad: {universidad}")
+
+            # Encontrar coincidencias parciales de nombres de universidades
+            coincidencias = process.extractBests(universidad, df['universidades'].dropna().astype(str).tolist(), scorer=fuzz.partial_ratio, score_cutoff=80)
+            
+            if not coincidencias:
+                logger.error(f"No se encontró la universidad '{universidad}' en la configuración.")
+                continue
+
+            for nombre_df, _ in coincidencias:
+                # Filtrar las filas correspondientes a la universidad encontrada
+                filas_universidad = df[df['universidades'] == nombre_df]
+
+                for index, fila in filas_universidad.iterrows():
+                    # Construir la oferta para procesar
+                    oferta = {
+                        'titulo': fila['título de la oferta'],  # Ajustar nombres de columnas según tu archivo Excel
+                        'area': fila['área'],
+                        'cargo_equivalente': fila['cargo equivalente'],
+                        'nivel_educativo': fila['nivel educativo'],
+                        'subnivel': fila['subnivel'],
+                        'cantidad_vacantes': fila['cantidad de vacantes'],
+                        'rango_salario': fila['rango del salario en millones'],
+                        'descripcion': fila['descripción'],
+                        'requisitos': fila['requisitos'],
+                        'departamento': fila['departamento'],
+                        'ciudad': fila['ciudad'],
+                        'sector': fila['sector'],
+                        'subsectores': fila['subsectores'],
+                        'nivel_estudio': fila['nivel de estudio'],
+                        'profesion': fila['profecion'],
+                        'experiencia_minima': fila['años totales de experiencia entre'],
+                        'experiencia_maxima': fila['años totales de experiencia'],
+                        'experiencia_requerida': fila['Experiencia requerida'],
+                        'tipo_contrato': fila['tipo de contrato'],
+                        'tiempo_dedicado': fila['tiempo dedicado']
+                    }
+                    # Procesar la universidad con la oferta construida
+                    resultado = procesar_universidad(universidad, oferta, fila, driver)
+                    resultados.append({'nombre': universidad, 'resultado': resultado})
+
+        # Cerrar el driver de Selenium al finalizar
+        driver.quit()
+        return jsonify({"status": "Automatización completada", "resultados": resultados})
+
+    except Exception as e:
+        logger.error(f"Error en la automatización de universidades: {str(e)}")
+        return jsonify({"status": f"Error: {str(e)}"}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)
